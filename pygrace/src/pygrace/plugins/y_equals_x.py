@@ -5,7 +5,7 @@ from .types import PluginDefinition
 Y_EQUALS_X_PLUGIN_ID = "y_equals_x_shaded"
 
 
-def _render_y_equals_x_shaded(ax, config: dict[str, object]) -> None:
+def _render_y_equals_x_shaded(ax, config: dict[str, object], _backend: object) -> None:
     alpha_raw = config.get("alpha", 0.15)
     alpha = float(alpha_raw)
     alpha = max(0.0, min(1.0, alpha))

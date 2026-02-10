@@ -9,4 +9,4 @@ class PluginDefinition:
     plugin_id: str
     name: str
     default_config: dict[str, Any]
-    render: Callable[[Any, dict[str, Any]], None]
+    render: Callable[[Any, dict[str, Any], Any], None]

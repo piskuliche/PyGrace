@@ -10,7 +10,7 @@ import matplotlib
 from matplotlib import ticker
 
 from .data import Dataset
-from .plugins import PLUGIN_DEFINITIONS, PLUGIN_LIST, Y_EQUALS_X_PLUGIN_ID
+from .plugins import LINEAR_REGRESSION_PLUGIN_ID, PLUGIN_DEFINITIONS, PLUGIN_LIST, Y_EQUALS_X_PLUGIN_ID
 
 
 @dataclass
@@ -196,7 +196,7 @@ class PlotBackend:
             plugin = PLUGIN_DEFINITIONS.get(plugin_id)
             if plugin is None:
                 continue
-            plugin.render(ax, config)
+            plugin.render(ax, config, self)
 
     def apply_axes_state(self, ax) -> None:
         state = self.state

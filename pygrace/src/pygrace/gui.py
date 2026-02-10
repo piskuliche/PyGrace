@@ -4,7 +4,13 @@ import sys
 
 import matplotlib
 
-from .backend import Y_EQUALS_X_PLUGIN_ID, PlotBackend, PlotState, render_hardcopy
+from .backend import (
+    LINEAR_REGRESSION_PLUGIN_ID,
+    Y_EQUALS_X_PLUGIN_ID,
+    PlotBackend,
+    PlotState,
+    render_hardcopy,
+)
 from .data import Dataset
 
 
@@ -602,10 +608,18 @@ def launch_gui(
         alpha_spin.setSingleStep(0.01)
         alpha_spin.setDecimals(2)
         alpha_spin.setValue(alpha_default)
+        dataset_combo = QtWidgets.QComboBox()
+        for ds in datasets:
+            dataset_combo.addItem(ds.name)
+        dataset_index_default = int((current or {}).get("dataset_index", 0))
+        if dataset_combo.count() > 0:
+            dataset_combo.setCurrentIndex(max(0, min(dataset_combo.count() - 1, dataset_index_default)))
 
         layout.addRow(enabled_check)
         if plugin_id == Y_EQUALS_X_PLUGIN_ID:
             layout.addRow("Alpha", alpha_spin)
+        if plugin_id == LINEAR_REGRESSION_PLUGIN_ID:
+            layout.addRow("Dataset", dataset_combo)
 
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.StandardButton.Ok
@@ -622,6 +636,8 @@ def launch_gui(
             config = {"enabled": True}
             if plugin_id == Y_EQUALS_X_PLUGIN_ID:
                 config["alpha"] = float(alpha_spin.value())
+            if plugin_id == LINEAR_REGRESSION_PLUGIN_ID and dataset_combo.count() > 0:
+                config["dataset_index"] = int(dataset_combo.currentIndex())
             backend.enable_plugin(plugin_id, **config)
         else:
             backend.disable_plugin(plugin_id)

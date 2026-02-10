@@ -3,7 +3,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import ticker
 
-from pygrace.backend import Y_EQUALS_X_PLUGIN_ID, PlotBackend, PlotState
+from pygrace.backend import LINEAR_REGRESSION_PLUGIN_ID, Y_EQUALS_X_PLUGIN_ID, PlotBackend, PlotState
 from pygrace.backend import render_hardcopy
 from pygrace.data import Dataset
 
@@ -212,4 +212,24 @@ def test_render_draws_y_equals_x_plugin_with_alpha():
     assert len(ax.collections) >= base_collection_count + 1
     alphas = [c.get_alpha() for c in ax.collections if c.get_alpha() is not None]
     assert any(abs(a - 0.33) < 1e-9 for a in alphas)
+    plt.close(fig)
+
+
+def test_render_draws_linear_regression_plugin_line():
+    ds = Dataset(name="lin", x=[0, 1, 2, 3], y=[1, 3, 5, 7])
+    backend = PlotBackend([ds], PlotState(None, None, None, None, True), None)
+
+    fig, ax = plt.subplots()
+    backend.render(ax)
+    base_line_count = len(ax.lines)
+
+    backend.enable_plugin(LINEAR_REGRESSION_PLUGIN_ID, dataset_index=0, color="black")
+    backend.render(ax)
+
+    assert len(ax.lines) >= base_line_count + 1
+    fit_line = ax.lines[-1]
+    x_vals = fit_line.get_xdata().tolist()
+    y_vals = fit_line.get_ydata().tolist()
+    assert x_vals == [0, 3]
+    assert y_vals == [1.0, 7.0]
     plt.close(fig)
