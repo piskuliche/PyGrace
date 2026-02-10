@@ -14,6 +14,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("files", nargs="*", help="Data files")
     parser.add_argument("-nxy", dest="nxy_files", action="append", default=[], help="Read simple XY data")
+    parser.add_argument(
+        "-bxy",
+        "--bxy",
+        dest="bxy_specs",
+        action="append",
+        default=[],
+        help="Column mapping per file: x:y, x:y:dy, or x:y:dx:dy (1-based indices)",
+    )
     parser.add_argument("-title", dest="title", default=None, help="Plot title")
     parser.add_argument("-xlabel", dest="xlabel", default=None, help="X axis label")
     parser.add_argument("-ylabel", dest="ylabel", default=None, help="Y axis label")
@@ -57,7 +65,18 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     data_files = [Path(p) for p in args.files] + [Path(p) for p in args.nxy_files]
-    datasets = load_datasets(data_files)
+    if len(args.bxy_specs) > len(data_files):
+        sys.stderr.write("Error: more -bxy specs than data files\n")
+        return 2
+    bxy_by_file = [None for _ in data_files]
+    for idx, spec in enumerate(args.bxy_specs):
+        bxy_by_file[idx] = spec
+
+    try:
+        datasets = load_datasets(data_files, bxy_specs=bxy_by_file)
+    except ValueError as exc:
+        sys.stderr.write(f"Error: {exc}\n")
+        return 2
 
     legend_labels = None
     if args.legend:

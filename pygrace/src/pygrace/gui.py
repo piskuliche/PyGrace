@@ -1,143 +1,11 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
-import ast
-import math
-from pathlib import Path
 
 import matplotlib
-from matplotlib import ticker
 
+from .backend import Y_EQUALS_X_PLUGIN_ID, PlotBackend, PlotState, render_hardcopy
 from .data import Dataset
-
-
-@dataclass
-class PlotState:
-    title: str | None
-    xlabel: str | None
-    ylabel: str | None
-    world: list[float] | None
-    autoscale: bool
-    title_size: float | None
-    xlabel_size: float | None
-    ylabel_size: float | None
-    xtick_size: float | None
-    ytick_size: float | None
-    x_major_step: float | None
-    y_major_step: float | None
-    x_minor_step: float | None
-    y_minor_step: float | None
-    minor_ticks: bool
-
-
-@dataclass
-class PlotConfig:
-    datasets: list[Dataset]
-    state: PlotState
-    legend_labels: list[str] | None
-
-
-def _apply_axes_state(ax, state: PlotState) -> None:
-    if state.title is not None:
-        ax.set_title(state.title)
-    if state.title_size is not None:
-        ax.title.set_fontsize(state.title_size)
-    if state.xlabel is not None:
-        ax.set_xlabel(state.xlabel)
-    if state.xlabel_size is not None:
-        ax.xaxis.label.set_size(state.xlabel_size)
-    if state.ylabel is not None:
-        ax.set_ylabel(state.ylabel)
-    if state.ylabel_size is not None:
-        ax.yaxis.label.set_size(state.ylabel_size)
-    if state.xtick_size is not None:
-        ax.tick_params(axis="x", labelsize=state.xtick_size)
-    if state.ytick_size is not None:
-        ax.tick_params(axis="y", labelsize=state.ytick_size)
-    if state.x_major_step:
-        ax.xaxis.set_major_locator(ticker.MultipleLocator(state.x_major_step))
-    if state.y_major_step:
-        ax.yaxis.set_major_locator(ticker.MultipleLocator(state.y_major_step))
-    if state.minor_ticks:
-        if state.x_minor_step:
-            ax.xaxis.set_minor_locator(ticker.MultipleLocator(state.x_minor_step))
-        else:
-            ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
-        if state.y_minor_step:
-            ax.yaxis.set_minor_locator(ticker.MultipleLocator(state.y_minor_step))
-        else:
-            ax.yaxis.set_minor_locator(ticker.AutoMinorLocator())
-    else:
-        ax.xaxis.set_minor_locator(ticker.NullLocator())
-        ax.yaxis.set_minor_locator(ticker.NullLocator())
-    if state.world is not None:
-        xmin, xmax, ymin, ymax = state.world
-        ax.set_xlim(xmin, xmax)
-        ax.set_ylim(ymin, ymax)
-    elif state.autoscale:
-        ax.relim()
-        ax.autoscale()
-
-
-def _plot_datasets(ax, datasets: list[Dataset], legend_labels: list[str] | None) -> None:
-    handles = []
-    labels = []
-    for idx, ds in enumerate(datasets):
-        label = ds.name
-        if legend_labels and idx < len(legend_labels):
-            label = legend_labels[idx]
-        marker_face = ds.marker_face_color if ds.marker_fill else "none"
-        handle, = ax.plot(
-            ds.x,
-            ds.y,
-            label=label,
-            linewidth=ds.line_width,
-            linestyle=ds.line_style,
-            color=ds.line_color,
-            marker=ds.marker,
-            markersize=ds.marker_size,
-            markerfacecolor=marker_face,
-            markeredgecolor=ds.marker_edge_color,
-        )
-        handles.append(handle)
-        labels.append(label)
-    if handles:
-        ax.legend(handles=handles, labels=labels)
-
-def _find_local_extrema(ds: Dataset) -> list[tuple[str, int, float, float]]:
-    extrema: list[tuple[str, int, float, float]] = []
-    if len(ds.y) < 3:
-        return extrema
-    for i in range(1, len(ds.y) - 1):
-        y0 = ds.y[i - 1]
-        y1 = ds.y[i]
-        y2 = ds.y[i + 1]
-        if y1 < y0 and y1 < y2:
-            extrema.append(("min", i, ds.x[i], y1))
-        elif y1 > y0 and y1 > y2:
-            extrema.append(("max", i, ds.x[i], y1))
-    return extrema
-
-
-def render_hardcopy(
-    datasets: list[Dataset],
-    output_path: Path,
-    title: str | None,
-    xlabel: str | None,
-    ylabel: str | None,
-    world: list[float] | None,
-    autoscale: bool,
-    legend_labels: list[str] | None,
-) -> None:
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots()
-    _plot_datasets(ax, datasets, legend_labels)
-    _apply_axes_state(ax, PlotState(title, xlabel, ylabel, world, autoscale))
-    fig.tight_layout()
-    fig.savefig(output_path, dpi=150)
 
 
 def launch_gui(
@@ -161,26 +29,20 @@ def launch_gui(
     canvas = FigureCanvas(fig)
     toolbar = NavigationToolbar(canvas, None)
 
-    _plot_datasets(ax, datasets, legend_labels)
-    state = PlotState(
-        title,
-        xlabel,
-        ylabel,
-        world,
-        autoscale,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        False,
+    backend = PlotBackend(
+        datasets=datasets,
+        state=PlotState(
+            title=title,
+            xlabel=xlabel,
+            ylabel=ylabel,
+            world=world,
+            autoscale=autoscale,
+        ),
+        legend_labels=legend_labels,
     )
-    base_y_by_id: dict[int, list[float]] = {id(ds): ds.y[:] for ds in datasets}
-    _apply_axes_state(ax, state)
+    state = backend.state
+    backend.plot_datasets(ax)
+    backend.apply_axes_state(ax)
 
     window = QtWidgets.QMainWindow()
     window.setWindowTitle("PyGrace")
@@ -200,10 +62,8 @@ def launch_gui(
     state.xtick_size = ax.xaxis.get_ticklabels()[0].get_size() if ax.xaxis.get_ticklabels() else 10
     state.ytick_size = ax.yaxis.get_ticklabels()[0].get_size() if ax.yaxis.get_ticklabels() else 10
 
-    def refresh():
-        ax.clear()
-        _plot_datasets(ax, datasets, legend_labels)
-        _apply_axes_state(ax, state)
+    def refresh() -> None:
+        backend.render(ax)
         canvas.draw_idle()
 
     axis_dialog = QtWidgets.QDialog(window)
@@ -476,10 +336,34 @@ def launch_gui(
         else:
             name_edit.setText("")
 
+    appearance_set = QtWidgets.QComboBox()
+    for ds in datasets:
+        appearance_set.addItem(ds.name)
+
+    extrema_box = QtWidgets.QGroupBox("Align Extrema")
+    extrema_layout = QtWidgets.QFormLayout(extrema_box)
+    extrema_selectors: list[tuple[Dataset, QtWidgets.QComboBox]] = []
+
+    def format_extrema_label(entry: tuple[str, int, float, float]) -> str:
+        kind, idx, xval, yval = entry
+        return f"{kind} @ i={idx}, x={xval:.4g}, y={yval:.4g}"
+
+    def rebuild_extrema_selectors() -> None:
+        for i in reversed(range(extrema_layout.rowCount())):
+            extrema_layout.removeRow(i)
+        extrema_selectors.clear()
+        for ds in datasets:
+            combo = QtWidgets.QComboBox()
+            extrema = backend.extrema_for_dataset(ds)
+            for entry in extrema:
+                combo.addItem(format_extrema_label(entry), entry)
+            extrema_layout.addRow(ds.name, combo)
+            extrema_selectors.append((ds, combo))
+
     def apply_name_change(text: str) -> None:
         row = dataset_list.currentRow()
         if 0 <= row < len(datasets):
-            datasets[row].name = text
+            backend.rename_dataset(row, text)
             item = dataset_list.item(row)
             if item is not None:
                 item.setText(text)
@@ -492,39 +376,9 @@ def launch_gui(
     name_edit.textChanged.connect(apply_name_change)
 
     def toggle_dataset(item: QtWidgets.QListWidgetItem) -> None:
-        visible = item.checkState() == QtCore.Qt.CheckState.Checked
         idx = dataset_list.row(item)
-        if 0 <= idx < len(datasets):
-            datasets[idx].name = datasets[idx].name  # keep name stable
-        ax.clear()
-        handles = []
-        labels = []
-        for i, ds in enumerate(datasets):
-            list_item = dataset_list.item(i)
-            if list_item.checkState() != QtCore.Qt.CheckState.Checked:
-                continue
-            label = ds.name
-            if legend_labels and i < len(legend_labels):
-                label = legend_labels[i]
-            marker_face = ds.marker_face_color if ds.marker_fill else "none"
-            handle, = ax.plot(
-                ds.x,
-                ds.y,
-                label=label,
-                linewidth=ds.line_width,
-                linestyle=ds.line_style,
-                color=ds.line_color,
-                marker=ds.marker,
-                markersize=ds.marker_size,
-                markerfacecolor=marker_face,
-                markeredgecolor=ds.marker_edge_color,
-            )
-            handles.append(handle)
-            labels.append(label)
-        if handles:
-            ax.legend(handles=handles, labels=labels)
-        _apply_axes_state(ax, state)
-        canvas.draw_idle()
+        backend.set_dataset_visible(idx, item.checkState() == QtCore.Qt.CheckState.Checked)
+        refresh()
 
     dataset_list.itemChanged.connect(toggle_dataset)
 
@@ -533,10 +387,6 @@ def launch_gui(
 
     appearance_box = QtWidgets.QGroupBox("Set Appearance")
     appearance_layout = QtWidgets.QFormLayout(appearance_box)
-
-    appearance_set = QtWidgets.QComboBox()
-    for ds in datasets:
-        appearance_set.addItem(ds.name)
 
     line_width_spin = QtWidgets.QDoubleSpinBox()
     line_width_spin.setRange(0.1, 10.0)
@@ -563,30 +413,31 @@ def launch_gui(
 
     marker_fill_check = QtWidgets.QCheckBox("Fill marker")
 
-    def current_appearance_dataset() -> Dataset | None:
-        idx = appearance_set.currentIndex()
-        if 0 <= idx < len(datasets):
-            return datasets[idx]
-        return None
+    def current_appearance_index() -> int:
+        return appearance_set.currentIndex()
 
     def apply_appearance_from_ui() -> None:
-        ds = current_appearance_dataset()
-        if ds is None:
+        idx = current_appearance_index()
+        if not (0 <= idx < len(datasets)):
             return
-        ds.line_width = line_width_spin.value()
-        ds.line_style = line_style_combo.currentText()
-        ds.line_color = line_color_edit.text().strip() or ds.line_color
-        ds.marker = marker_combo.currentText()
-        ds.marker_size = marker_size_spin.value()
-        ds.marker_face_color = marker_face_edit.text().strip() or ds.marker_face_color
-        ds.marker_edge_color = marker_edge_edit.text().strip() or ds.marker_edge_color
-        ds.marker_fill = marker_fill_check.isChecked()
+        backend.set_dataset_appearance(
+            idx,
+            line_width=line_width_spin.value(),
+            line_style=line_style_combo.currentText(),
+            line_color=line_color_edit.text().strip(),
+            marker=marker_combo.currentText(),
+            marker_size=marker_size_spin.value(),
+            marker_face_color=marker_face_edit.text().strip(),
+            marker_edge_color=marker_edge_edit.text().strip(),
+            marker_fill=marker_fill_check.isChecked(),
+        )
         refresh()
 
     def load_appearance_into_ui() -> None:
-        ds = current_appearance_dataset()
-        if ds is None:
+        idx = current_appearance_index()
+        if not (0 <= idx < len(datasets)):
             return
+        ds = datasets[idx]
         line_width_spin.setValue(ds.line_width)
         line_style_combo.setCurrentText(ds.line_style)
         line_color_edit.setText(ds.line_color)
@@ -648,36 +499,6 @@ def launch_gui(
     appearance_layout_container.addWidget(appearance_box)
     appearance_dialog.setLayout(appearance_layout_container)
 
-    extrema_box = QtWidgets.QGroupBox("Align Extrema")
-    extrema_layout = QtWidgets.QFormLayout(extrema_box)
-    extrema_selectors: list[tuple[Dataset, QtWidgets.QComboBox]] = []
-
-    def format_extrema_label(entry: tuple[str, int, float, float]) -> str:
-        kind, idx, xval, yval = entry
-        return f"{kind} @ i={idx}, x={xval:.4g}, y={yval:.4g}"
-
-    def rebuild_extrema_selectors() -> None:
-        for i in reversed(range(extrema_layout.rowCount())):
-            extrema_layout.removeRow(i)
-        extrema_selectors.clear()
-        for ds in datasets:
-            base_y_by_id.setdefault(id(ds), ds.y[:])
-            combo = QtWidgets.QComboBox()
-            extrema = _find_local_extrema(ds)
-            if not extrema:
-                # fallback to global min/max if no local extrema
-                if ds.y:
-                    ymin = min(range(len(ds.y)), key=lambda i: ds.y[i])
-                    ymax = max(range(len(ds.y)), key=lambda i: ds.y[i])
-                    extrema = [
-                        ("min", ymin, ds.x[ymin], ds.y[ymin]),
-                        ("max", ymax, ds.x[ymax], ds.y[ymax]),
-                    ]
-            for entry in extrema:
-                combo.addItem(format_extrema_label(entry), entry)
-            extrema_layout.addRow(ds.name, combo)
-            extrema_selectors.append((ds, combo))
-
     rebuild_extrema_selectors()
     load_appearance_into_ui()
 
@@ -690,14 +511,7 @@ def launch_gui(
             selections.append((ds, data))
         if not selections:
             return
-        target_y = sum(sel[1][3] for sel in selections) / len(selections)
-        for ds, entry in selections:
-            _, idx, _, yval = entry
-            if idx < 0 or idx >= len(ds.y):
-                continue
-            delta = target_y - yval
-            base_y = base_y_by_id.get(id(ds), ds.y)
-            ds.y = [y + delta for y in base_y]
+        backend.align_extrema(selections)
         refresh()
 
     align_button = QtWidgets.QPushButton("Align Selected")
@@ -709,148 +523,20 @@ def launch_gui(
     transform_edit.setPlaceholderText("e.g. y1 = y0 + 2, x2 = x0 * 0.5")
     transform_status = QtWidgets.QLabel("")
 
-    class Vec:
-        def __init__(self, values: list[float]):
-            self.values = values
-
-        def _binary(self, other, op):
-            if isinstance(other, Vec):
-                if len(self.values) != len(other.values):
-                    raise ValueError("Vector length mismatch")
-                return Vec([op(a, b) for a, b in zip(self.values, other.values)])
-            return Vec([op(a, float(other)) for a in self.values])
-
-        def __add__(self, other):
-            return self._binary(other, lambda a, b: a + b)
-
-        def __radd__(self, other):
-            return self.__add__(other)
-
-        def __sub__(self, other):
-            return self._binary(other, lambda a, b: a - b)
-
-        def __rsub__(self, other):
-            if isinstance(other, Vec):
-                return other.__sub__(self)
-            return Vec([float(other) - a for a in self.values])
-
-        def __mul__(self, other):
-            return self._binary(other, lambda a, b: a * b)
-
-        def __rmul__(self, other):
-            return self.__mul__(other)
-
-        def __truediv__(self, other):
-            return self._binary(other, lambda a, b: a / b)
-
-        def __rtruediv__(self, other):
-            if isinstance(other, Vec):
-                return other.__truediv__(self)
-            return Vec([float(other) / a for a in self.values])
-
-        def apply(self, func):
-            return Vec([func(a) for a in self.values])
-
-    def _vec_func(func):
-        def wrapper(arg):
-            if isinstance(arg, Vec):
-                return arg.apply(func)
-            return func(arg)
-        return wrapper
-
-    def _vec_min(*args):
-        if len(args) == 1 and isinstance(args[0], Vec):
-            return min(args[0].values)
-        if any(isinstance(arg, Vec) for arg in args):
-            raise ValueError("min() does not support multiple vectors")
-        return min(*args)
-
-    def _vec_max(*args):
-        if len(args) == 1 and isinstance(args[0], Vec):
-            return max(args[0].values)
-        if any(isinstance(arg, Vec) for arg in args):
-            raise ValueError("max() does not support multiple vectors")
-        return max(*args)
-
-    def _safe_eval(expr: str, variables: dict[str, list[float]]) -> list[float]:
-        vec_vars = {name: Vec(vals) for name, vals in variables.items()}
-        allowed_names = {
-            "abs": _vec_func(abs),
-            "min": _vec_min,
-            "max": _vec_max,
-            "sqrt": _vec_func(math.sqrt),
-            "log": _vec_func(math.log),
-            "log10": _vec_func(math.log10),
-            "exp": _vec_func(math.exp),
-            "sin": _vec_func(math.sin),
-            "cos": _vec_func(math.cos),
-            "tan": _vec_func(math.tan),
-            **vec_vars,
-        }
-
-        node = ast.parse(expr, mode="eval")
-        for sub in ast.walk(node):
-            if isinstance(sub, (ast.Import, ast.ImportFrom, ast.Attribute)):
-                raise ValueError("Unsupported expression")
-            if isinstance(sub, ast.Call):
-                if not isinstance(sub.func, ast.Name):
-                    raise ValueError("Unsupported function")
-                if sub.func.id not in allowed_names:
-                    raise ValueError("Unsupported function")
-        code = compile(node, "<transform>", "eval")
-        result = eval(code, {"__builtins__": {}}, allowed_names)
-        if isinstance(result, Vec):
-            return result.values
-        if isinstance(result, (int, float)):
-            return [float(result) for _ in range(len(next(iter(variables.values()))))]
-        raise ValueError("Expression did not evaluate to a vector")
-
     def apply_transform() -> None:
         text = transform_edit.text().strip()
         if not text:
             return
         try:
-            if "=" not in text:
-                raise ValueError("Missing '='")
-            lhs, rhs = [part.strip() for part in text.split("=", 1)]
-            if len(lhs) < 2 or lhs[0] not in {"x", "y"}:
-                raise ValueError("Left side must be xN or yN")
-            target_axis = lhs[0]
-            try:
-                target_index = int(lhs[1:])
-            except ValueError:
-                raise ValueError("Left side index must be an integer")
-            variables: dict[str, list[float]] = {}
-            for idx, ds in enumerate(datasets):
-                variables[f"x{idx}"] = ds.x
-                variables[f"y{idx}"] = ds.y
-            if not variables:
-                raise ValueError("No datasets loaded")
-            result = _safe_eval(rhs, variables)
-            if target_index < 0:
-                raise ValueError("Index must be >= 0")
-            if target_index < len(datasets):
+            target_index = backend.apply_transform(text)
+            if target_index >= dataset_list.count():
                 target = datasets[target_index]
-            else:
-                # create new dataset based on first set's x by default
-                base = datasets[0]
-                target = Dataset(name=f"set{target_index}", x=base.x[:], y=base.y[:])
-                datasets.append(target)
                 item = QtWidgets.QListWidgetItem(target.name)
                 item.setFlags(item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
                 item.setCheckState(QtCore.Qt.CheckState.Checked)
                 dataset_list.addItem(item)
                 appearance_set.addItem(target.name)
-            if target_axis == "x":
-                if len(result) != len(target.x):
-                    raise ValueError("Result length does not match target x length")
-                target.x = result
-            else:
-                if len(result) != len(target.y):
-                    raise ValueError("Result length does not match target y length")
-                target.y = result
             refresh()
-            base_y_by_id[id(target)] = target.y[:]
             rebuild_extrema_selectors()
             transform_status.setText("Applied.")
         except Exception as exc:  # noqa: BLE001
@@ -883,10 +569,12 @@ def launch_gui(
     window.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock)
 
     menu = window.menuBar()
+    menu.setNativeMenuBar(False)
     set_menu = menu.addMenu("Set")
     appearance_action = set_menu.addAction("Appearance...")
     axis_menu = menu.addMenu("Axis")
     axis_action = axis_menu.addAction("Axes...")
+    plugins_menu = menu.addMenu("Plugins")
 
     def show_appearance_dialog() -> None:
         appearance_dialog.show()
@@ -898,8 +586,54 @@ def launch_gui(
         axis_dialog.raise_()
         axis_dialog.activateWindow()
 
+    def configure_plugin(plugin_id: str, plugin_name: str) -> None:
+        dialog = QtWidgets.QDialog(window)
+        dialog.setWindowTitle(plugin_name)
+        layout = QtWidgets.QFormLayout(dialog)
+
+        current = backend.get_plugin_config(plugin_id)
+        enabled_default = current is not None and bool(current.get("enabled", True))
+        alpha_default = float((current or {}).get("alpha", 0.15))
+
+        enabled_check = QtWidgets.QCheckBox("Enabled")
+        enabled_check.setChecked(enabled_default)
+        alpha_spin = QtWidgets.QDoubleSpinBox()
+        alpha_spin.setRange(0.0, 1.0)
+        alpha_spin.setSingleStep(0.01)
+        alpha_spin.setDecimals(2)
+        alpha_spin.setValue(alpha_default)
+
+        layout.addRow(enabled_check)
+        if plugin_id == Y_EQUALS_X_PLUGIN_ID:
+            layout.addRow("Alpha", alpha_spin)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
+        )
+        layout.addRow(buttons)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+            return
+
+        if enabled_check.isChecked():
+            config = {"enabled": True}
+            if plugin_id == Y_EQUALS_X_PLUGIN_ID:
+                config["alpha"] = float(alpha_spin.value())
+            backend.enable_plugin(plugin_id, **config)
+        else:
+            backend.disable_plugin(plugin_id)
+        refresh()
+
     appearance_action.triggered.connect(show_appearance_dialog)
     axis_action.triggered.connect(show_axis_dialog)
+    for plugin_id, plugin_name in backend.available_plugins():
+        action = plugins_menu.addAction(plugin_name)
+        action.triggered.connect(
+            lambda _checked=False, pid=plugin_id, pname=plugin_name: configure_plugin(pid, pname)
+        )
 
     window.resize(1100, 700)
     window.show()

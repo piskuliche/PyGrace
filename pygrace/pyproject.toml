@@ -23,6 +23,11 @@ dependencies = [
   "PySide6>=6.5",
 ]
 
+[project.optional-dependencies]
+dev = [
+  "pytest",
+]
+
 [project.scripts]
 pygrace = "pygrace.cli:main"
 
